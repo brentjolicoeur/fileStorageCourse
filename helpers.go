@@ -1,24 +1,20 @@
 package main
 
 import (
-	"errors"
+	"fmt"
 	"mime"
-	"net/http"
 	"strings"
 )
 
-func determineFileExtension(header http.Header) (string, error) {
-	contentType := header.Get("Content-Type")
-	if contentType == "" {
-		return contentType, errors.New("Missing Content-Type Header")
-	}
+func determineFileExtension(contentType string) (string, error) {
+
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return "", errors.New("Error parsing media type")
+		return "", fmt.Errorf("Error parsing media type: %w", err)
 	}
 	_, fileExtension, ok := strings.Cut(mediaType, "/")
 	if !ok {
-		return "", errors.New("error determining file extension")
+		return "", fmt.Errorf("error determining file extension: %w", err)
 	}
 	if fileExtension == "jpeg" {
 		fileExtension = "jpg"
