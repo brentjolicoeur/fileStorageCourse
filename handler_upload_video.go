@@ -12,7 +12,8 @@ import (
 )
 
 func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request) {
-	const uplaodLimit = 1 << 30
+	const uploadLimit = 1 << 30
+	r.Body = http.MaxBytesReader(w, r.Body, uploadLimit)
 
 	videoIDString := r.PathValue("videoID")
 	videoID, err := uuid.Parse(videoIDString)
@@ -57,7 +58,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if mediaType != "video/mp4" {
-		respondWithError(w, http.StatusBadRequest, "Invalid media type", nil)
+		respondWithError(w, http.StatusBadRequest, "Invalid media type, only MP4 is allowed", nil)
 		return
 	}
 
@@ -72,7 +73,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	_, err = io.Copy(tmpFile, file)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "error copying data", err)
+		respondWithError(w, http.StatusInternalServerError, "error writing file to disk", err)
 		return
 	}
 
@@ -86,11 +87,19 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "", err)
 		return
 	}
+
 	randomFileName += ".mp4"
 
+	ratio, err := getVideoAspectRatio(tmpFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error determining aspect ratio", err)
+	}
+	key := ratio + "/" + randomFileName
+
 	params := s3.PutObjectInput{
-		Bucket:      &cfg.s3Bucket,
-		Key:         &randomFileName,
+		Bucket: &cfg.s3Bucket,
+		Key:    &key,
+
 		Body:        tmpFile,
 		ContentType: &mediaType,
 	}
@@ -99,7 +108,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "error putting into S3 bucket", err)
 		return
 	}
-	vidURL := cfg.getObjectURL(randomFileName)
+	vidURL := cfg.getObjectURL(key)
 
 	video.VideoURL = &vidURL
 	err = cfg.db.UpdateVideo(video)
