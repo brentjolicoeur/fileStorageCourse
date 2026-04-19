@@ -82,6 +82,21 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "error resetting pointer", err)
 		return
 	}
+
+	processedPath, err := processVideoForFastStart(tmpFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error processing video", err)
+		return
+	}
+	defer os.Remove(processedPath)
+
+	processedVideo, err := os.Open(processedPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error opening file", err)
+		return
+	}
+	defer processedVideo.Close()
+
 	randomFileName, err := randomKeyName()
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "", err)
@@ -90,7 +105,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	randomFileName += ".mp4"
 
-	ratio, err := getVideoAspectRatio(tmpFile.Name())
+	ratio, err := getVideoAspectRatio(processedVideo.Name())
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "error determining aspect ratio", err)
 	}
@@ -100,7 +115,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		Bucket: &cfg.s3Bucket,
 		Key:    &key,
 
-		Body:        tmpFile,
+		Body:        processedVideo,
 		ContentType: &mediaType,
 	}
 	_, err = cfg.s3Client.PutObject(r.Context(), &params)
@@ -113,7 +128,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	video.VideoURL = &vidURL
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Unable to update thumbnail url", err)
+		respondWithError(w, http.StatusBadRequest, "Unable to update video url", err)
 		return
 	}
 	respondWithJSON(w, http.StatusOK, video)
