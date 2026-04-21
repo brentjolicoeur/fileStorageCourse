@@ -36,7 +36,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Unable to find video", err)
+		respondWithError(w, http.StatusNotFound, "Unable to find video", nil)
 		return
 	}
 	if userID != video.UserID {
@@ -108,6 +108,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	ratio, err := getVideoAspectRatio(processedVideo.Name())
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "error determining aspect ratio", err)
+		return
 	}
 	key := ratio + "/" + randomFileName
 
@@ -123,13 +124,20 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		respondWithError(w, http.StatusInternalServerError, "error putting into S3 bucket", err)
 		return
 	}
-	vidURL := cfg.getObjectURL(key)
-
+	vidURL := cfg.s3Bucket + "," + key
 	video.VideoURL = &vidURL
+
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "Unable to update video url", err)
 		return
 	}
-	respondWithJSON(w, http.StatusOK, video)
+
+	presignedVideo, err := cfg.dbVideoToSignedVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "error getting presigned video", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, presignedVideo)
 }
